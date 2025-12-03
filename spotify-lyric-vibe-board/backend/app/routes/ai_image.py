@@ -7,16 +7,23 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field, validator
 
+# This router is registered in app/main.py
+# as: app.include_router(ai_image.router)
 router = APIRouter(prefix="/api/ai-image", tags=["ai-image"])
 
 
 class GenerateImageRequest(BaseModel):
-    lyric_lines: List[str] = Field(..., description="Lyric lines that capture the vibe")
+    lyric_lines: List[str] = Field(
+        ...,
+        description="Lyric lines that capture the vibe",
+    )
     emotion: Optional[str] = Field(
-        None, description="Primary emotion inferred from the current lyric section"
+        None,
+        description="Primary emotion inferred from the current lyric section",
     )
     themes: Optional[List[str]] = Field(
-        None, description="List of themes extracted from the lyrics"
+        None,
+        description="List of themes extracted from the lyrics",
     )
     style: Optional[str] = Field(
         None,
@@ -37,19 +44,25 @@ class GenerateImageResponse(BaseModel):
 
 
 def _build_prompt(payload: GenerateImageRequest) -> str:
+    """Build a concise text prompt from the lyric context."""
     lyric_section = " / ".join(payload.lyric_lines)
+
     parts = [
         f"Lyrics: {lyric_section}",
         f"Emotion: {payload.emotion}" if payload.emotion else None,
         f"Themes: {', '.join(payload.themes)}" if payload.themes else None,
         f"Style: {payload.style}" if payload.style else None,
     ]
-    joined = ", ".join([p for p in parts if p])
+
+    joined = ", ".join(p for p in parts if p)
+    # Keep the prompt a manageable length
     return textwrap.shorten(joined, width=300, placeholder=" …")
 
 
 def _encode_placeholder_image(prompt: str) -> str:
+    """Encode the prompt as a fake 'image' data URL (placeholder)."""
     encoded_prompt = base64.b64encode(prompt.encode("utf-8")).decode("utf-8")
+    # Frontend can treat this as a data URL for now
     return f"data:text/plain;base64,{encoded_prompt}"
 
 
@@ -60,13 +73,12 @@ def _encode_placeholder_image(prompt: str) -> str:
     summary="Generate a vibe board image for the current lyrics",
 )
 def generate_image(payload: GenerateImageRequest) -> GenerateImageResponse:
-    """Generate a placeholder AI image based on lyric context.
-
-    This route simulates image generation by returning a base64-encoded data URL
-    derived from the prompt. It is designed to be replaced with a real image
-    generation service once credentials and models are connected.
     """
+    Placeholder AI image endpoint.
 
+    Simulates image generation by returning a base64-encoded data URL derived from
+    the prompt. This can later be swapped out for a real image-generation API.
+    """
     prompt = _build_prompt(payload)
     if not prompt:
         raise HTTPException(
@@ -76,19 +88,3 @@ def generate_image(payload: GenerateImageRequest) -> GenerateImageResponse:
 
     data_url = _encode_placeholder_image(prompt)
     return GenerateImageResponse(prompt=prompt, image_data_url=data_url)
-spotify-lyric-vibe-board/backend/app/routes/ai_text.py
-+12
--0
-
-from __future__ import annotations
-
-from fastapi import APIRouter
-
-router = APIRouter(prefix="/api/ai-text", tags=["ai-text"])
-
-
-@router.get("/ping")
-def ping() -> dict[str, str]:
-    """Placeholder endpoint to confirm the AI text router is wired."""
-
-    return {"status": "ai-text ready"}
