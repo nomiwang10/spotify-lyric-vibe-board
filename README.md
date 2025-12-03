@@ -72,3 +72,4 @@ spotify-lyric-vibe-board/
   docs/
     api_contract.md # JSON schemas and API docs
   README.md
+  
