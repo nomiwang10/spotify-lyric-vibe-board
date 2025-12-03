@@ -120,6 +120,8 @@ export default function VibeBoard() {
           <option value="German">German</option>
           <option value="Japanese">Japanese</option>
           <option value="Korean">Korean</option>
+          <option value="Chinese">Chinese</option>
+          <option value="Turkish">Turkish</option>
         </select>
       </div>
 
