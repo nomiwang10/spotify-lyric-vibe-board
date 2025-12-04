@@ -103,12 +103,14 @@ def _generate_image_data_url(prompt: str) -> str:
             n=1,
             response_format="b64_json",
         )
-    except Exception as e:  # pragma: no cover (runtime error path)
-        # Log or print for debugging in development
-        print(f"[ai-image] OpenAI image generation error: {e}")
+    except Exception as e:
+        # Print full error in backend logs
+        print(f"[ai-image] OpenAI image generation error: {type(e).__name__}: {e}")
+
+        # Surface the real error message to the client so we can debug
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Failed to generate image from AI service.",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"OpenAI image error: {type(e).__name__}: {e}",
         )
 
     if not response.data or not response.data[0].b64_json:
@@ -118,8 +120,6 @@ def _generate_image_data_url(prompt: str) -> str:
         )
 
     image_b64 = response.data[0].b64_json
-
-    # Return as a standard data URL so the frontend can <img src="...">
     return f"data:image/png;base64,{image_b64}"
 
 
