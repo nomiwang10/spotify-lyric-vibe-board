@@ -12,9 +12,9 @@ router = APIRouter(prefix="/api")
 # Setup Spotify Authentication
 # This will open a browser window the first time you run it to log you in.
 sp = Spotify(auth_manager=SpotifyOAuth(
-    client_id=os.getenv("80462b9869744fc69a827483fdcb0ff5"),
-    client_secret=os.getenv("4aaa32c39eda42f49be5889e58b40593"),
-    redirect_uri="http://127.0.0.1:8888/callback",
+    client_id=os.getenv("SPOTIPY_CLIENT_ID"),
+    client_secret=os.getenv("SPOTIPY_CLIENT_SECRET"),
+    redirect_uri=os.getenv("SPOTIPY_REDIRECT_URI"),
     scope="user-read-currently-playing"
 ))
 
