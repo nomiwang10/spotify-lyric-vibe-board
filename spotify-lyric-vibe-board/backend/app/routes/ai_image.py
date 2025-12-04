@@ -97,17 +97,13 @@ def _generate_image_data_url(prompt: str) -> str:
     """
     try:
         response = client.images.generate(
-            model="gpt-image-1",          # image model
+            model="gpt-image-1",
             prompt=prompt,
             size="1024x1024",
-            n=1,
-            response_format="b64_json",
+            n=1
         )
     except Exception as e:
-        # Print full error in backend logs
         print(f"[ai-image] OpenAI image generation error: {type(e).__name__}: {e}")
-
-        # Surface the real error message to the client so we can debug
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"OpenAI image error: {type(e).__name__}: {e}",
@@ -121,6 +117,7 @@ def _generate_image_data_url(prompt: str) -> str:
 
     image_b64 = response.data[0].b64_json
     return f"data:image/png;base64,{image_b64}"
+
 
 
 @router.post(
