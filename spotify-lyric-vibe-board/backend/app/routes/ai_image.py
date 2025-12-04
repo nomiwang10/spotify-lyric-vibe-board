@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import base64
+from io import BytesIO
+from PIL import Image
 import textwrap
 from typing import List, Optional
 
@@ -92,13 +94,16 @@ def _build_prompt(payload: GenerateImageRequest) -> str:
 
 
 def _generate_image_data_url(prompt: str) -> str:
+    """
+    Call OpenAI's image generation API, then downsize/compress to a small JPEG
+    and return a data:image/jpeg;base64,... URL.
+    """
     try:
         response = client.images.generate(
             model="gpt-image-1",
             prompt=prompt,
-            size="512x512",    # smaller & faster
-            n=1,
-            format="jpeg"      # enable compression
+            size="256x256",   # smaller than 512x512 -> much lighter
+            n=1
         )
     except Exception as e:
         print(f"[ai-image] OpenAI image generation error: {type(e).__name__}: {e}")
@@ -113,8 +118,21 @@ def _generate_image_data_url(prompt: str) -> str:
             detail="AI image service returned an empty result.",
         )
 
-    image_b64 = response.data[0].b64_json
-    return f"data:image/jpeg;base64,{image_b64}"
+    # 1) Decode the PNG bytes we get back
+    png_b64 = response.data[0].b64_json
+    png_bytes = base64.b64decode(png_b64)
+
+    # 2) Open as an image and convert to RGB (JPEG doesn't support alpha)
+    img = Image.open(BytesIO(png_bytes)).convert("RGB")
+
+    # 3) Re-encode as compressed JPEG
+    buf = BytesIO()
+    img.save(buf, format="JPEG", quality=70, optimize=True)  # tune quality if needed
+    jpeg_bytes = buf.getvalue()
+
+    # 4) Encode back to base64 for the frontend
+    jpeg_b64 = base64.b64encode(jpeg_bytes).decode("utf-8")
+    return f"data:image/jpeg;base64,{jpeg_b64}"
 
 
 
