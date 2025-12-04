@@ -92,15 +92,13 @@ def _build_prompt(payload: GenerateImageRequest) -> str:
 
 
 def _generate_image_data_url(prompt: str) -> str:
-    """
-    Call OpenAI's image generation API and return a data:image/png;base64,... URL.
-    """
     try:
         response = client.images.generate(
             model="gpt-image-1",
             prompt=prompt,
-            size="1024x1024",
-            n=1
+            size="512x512",    # smaller & faster
+            n=1,
+            format="jpeg"      # enable compression
         )
     except Exception as e:
         print(f"[ai-image] OpenAI image generation error: {type(e).__name__}: {e}")
@@ -116,7 +114,9 @@ def _generate_image_data_url(prompt: str) -> str:
         )
 
     image_b64 = response.data[0].b64_json
-    return f"data:image/png;base64,{image_b64}"
+    return f"data:image/jpeg;base64,{image_b64}"
+
+
 
 
 
