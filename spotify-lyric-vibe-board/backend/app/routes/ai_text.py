@@ -13,6 +13,7 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 class LyricChunk(BaseModel):
     text: str
     target_language: str = "English"
+    
 
 @router.post("/analyze-lyrics")
 def analyze_lyrics(request: LyricChunk):
