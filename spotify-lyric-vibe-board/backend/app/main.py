@@ -1,15 +1,22 @@
 # backend/app/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-# CHANGE 1: Import your teammates' files too
-from app.routes import ai_text, spotify, ai_image 
+from app.routes import ai_text, spotify, ai_image, genius
+from app.routes import auth
 
 app = FastAPI()
+
+app.include_router(auth.router)
 
 # --- 1. CORS Middleware Setup ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    # We add 127.0.0.1 to the list so it matches your new setup
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173", 
+        "http://localhost:3000"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
