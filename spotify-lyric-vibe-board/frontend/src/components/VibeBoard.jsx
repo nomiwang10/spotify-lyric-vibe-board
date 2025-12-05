@@ -96,7 +96,7 @@ export default function VibeBoard() {
 
   function handleConnect() {
     // Redirect to Spotify auth
-    window.location.href = "http://localhost:8000/auth/login";
+    window.location.href = "http://127.0.0.1:8000/auth/login";
   }
 
   useEffect(() => {
