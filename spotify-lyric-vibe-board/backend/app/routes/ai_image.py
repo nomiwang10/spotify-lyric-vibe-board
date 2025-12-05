@@ -74,7 +74,7 @@ class GenerateImageResponse(BaseModel):
 def _build_prompt(payload: GenerateImageRequest) -> str:
     """
     Build a concise text prompt from the ai-text output suitable for
-    a mixed aesthetic collage vibe board.
+    a mixed aesthetic collage vibe board, with strict SFW constraints.
     """
     lyric_text = payload.translation
 
@@ -84,6 +84,13 @@ def _build_prompt(payload: GenerateImageRequest) -> str:
     themes_text = ", ".join(keywords) if keywords else "infer key themes from the lyrics and vibe"
 
     color_palette = ", ".join(payload.colors)
+
+    safety_clause = (
+        "The artwork MUST be completely safe for work: "
+        "no nudity or partial nudity, no sexual content, no fetish content, "
+        "no graphic violence or gore, no depiction of self-harm or suicide, "
+        "no illegal activity, no drugs or alcohol focus, and no hateful or extremist symbols."
+    )
 
     prompt = f"""
     Create a mixed aesthetic collage vibe board, combining stylized illustrations,
@@ -96,6 +103,8 @@ def _build_prompt(payload: GenerateImageRequest) -> str:
     Themes: {themes_text}.
     Color palette: {color_palette}.
 
+    {safety_clause}
+
     Design details:
     - Use the provided colors prominently to reflect the mood.
     - Include subtle text snippets or handwritten-style words inspired by key lyrics.
@@ -105,6 +114,7 @@ def _build_prompt(payload: GenerateImageRequest) -> str:
 
     prompt = textwrap.dedent(prompt).strip()
     return textwrap.shorten(prompt, width=800, placeholder=" …")
+
 
 
 def _generate_image_data_url(prompt: str) -> str:
