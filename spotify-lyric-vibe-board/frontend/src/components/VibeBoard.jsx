@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   getCurrentTrack,
-  getLyrics,
+  parseGeniusLyrics,
   getTranslationVibe,
   getVibeImage,
 } from "../api/vibeApi";
@@ -32,49 +32,59 @@ export default function VibeBoard() {
         setTrack(trackData);
         setError(null);
 
-        // Find which lyric line matches current time
-        const currentTimeMs = trackData.progressMs;
-        const activeLine = lyrics.find(
-          (line) => currentTimeMs >= line.startMs && currentTimeMs < line.endMs
-        );
+        // --- NEW LOGIC START ---
+        
+        const currentTimeMs = trackData.progress_ms; 
 
-        if (activeLine && activeLine.id !== currentLine?.id) {
-          setCurrentLine(activeLine);
+        // 1. MATH MAGIC: Calculate exactly which line index we should be on.
+        // If we are at 12 seconds, 12000 / 5000 = 2.4 -> Index 2.
+        const lyricIndex = Math.floor(currentTimeMs / 5000);
 
-          // Get translation + vibe
-          const vibeData = await getTranslationVibe(
-            activeLine.id,
-            activeLine.text,
-            targetLanguage
-          );
-          setTranslation(vibeData);
+        // 2. SAFETY: Make sure that index actually exists in our lyrics list
+        if (lyrics.length > 0 && lyricIndex < lyrics.length) {
+          const activeLine = lyrics[lyricIndex];
 
-          // Get background image
-          const imageData = await getVibeImage(
-            vibeData.id,
-            vibeData.colors,
-            vibeData.imagePrompt
-          );
-          setBackgroundImage(imageData.imageUrl);
+          // 3. UPDATE: Only fetch AI if the line has changed
+          if (activeLine && activeLine.id !== currentLine?.id) {
+            setCurrentLine(activeLine);
+
+            // Get translation + vibe
+            const vibeData = await getTranslationVibe(
+              activeLine.id,
+              activeLine.text,
+              targetLanguage
+            );
+            setTranslation(vibeData);
+
+            // Get background image
+            const imageData = await getVibeImage(
+              vibeData.id,
+              vibeData.colors,
+              vibeData.imagePrompt
+            );
+            setBackgroundImage(imageData.imageUrl);
+          }
         }
+
       } catch (err) {
         console.error(err);
       }
     }, 1000);
-
     return () => clearInterval(interval);
   }, [isConnected, lyrics, currentLine, targetLanguage]);
 
-  // Load lyrics when track changes
+  // Update lyrics whenever the track changes
   useEffect(() => {
-    if (!track?.id) return;
+    if (!track?.lyrics) return;
 
-    getLyrics(track.id).then(setLyrics).catch(console.error);
-  }, [track?.id]);
+    // Use our new helper to chop up the Genius text
+    const processedLyrics = parseGeniusLyrics(track.lyrics);
+    setLyrics(processedLyrics);
+  }, [track?.lyrics]);
 
   function handleConnect() {
-    // Redirect to Spotify auth
-    window.location.href = "http://localhost:8000/auth/login";
+    // Redirect to Spotify auth (Using 127.0.0.1 to match backend)
+    window.location.href = "http://127.0.0.1:8000/auth/login";
   }
 
   // Check if already authenticated on load
@@ -130,7 +140,8 @@ export default function VibeBoard() {
       <header style={{ position: "absolute", top: 20, left: 20 }}>
         {track ? (
           <>
-            <h2>{track.name}</h2>
+            {/* --- FIX 2: Use 'track.song' (matches Python backend) --- */}
+            <h2>{track.song}</h2>
             <p>{track.artist}</p>
           </>
         ) : (
@@ -196,7 +207,10 @@ export default function VibeBoard() {
             )}
           </>
         ) : (
-          <p style={{ fontSize: "1.5rem" }}>Play a song on Spotify!</p>
+          <p style={{ fontSize: "1.5rem" }}>
+            {/* If we are here, lyrics exist but we are between lines */}
+            {lyrics.length > 0 ? "Wait for lyrics..." : "Play a song on Spotify!"}
+          </p>
         )}
       </main>
     </div>
