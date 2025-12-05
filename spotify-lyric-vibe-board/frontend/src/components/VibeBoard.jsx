@@ -73,7 +73,7 @@ export default function VibeBoard() {
   }, [track?.id]);
 
   function handleConnect() {
-    // Redirect to Spotify auth
+    // Redirect to Spotify authorization
     window.location.href = "http://localhost:8000/auth/login";
   }
 
