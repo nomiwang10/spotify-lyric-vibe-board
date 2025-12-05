@@ -1,40 +1,39 @@
-// --- 1. THE PORT FIX ---
-// We must use 8888 because that is what Aspyn's Spotify Redirect URI uses.
-const API_BASE = "http://localhost:8888/api";
+// MUST match your backend URL exactly
+const API_BASE = "http://127.0.0.1:8000/api";
 
-// --- 2. CONNECT TO ASPYN (Spotify) ---
 export async function getCurrentTrack() {
-  // Aspyn's endpoint is "/current-song", not "/current-track"
   const res = await fetch(`${API_BASE}/current-song`);
   return res.json();
 }
 
-// --- 3. MOCK LYRICS (Until Aspyn finishes Genius API) ---
-// Elif's frontend crashes if it doesn't get a list of timestamped lines.
-// Since Aspyn currently only returns a string, we FAKE the timestamps here
-// so you can test your translation and Vibe Board immediately.
-export async function getLyrics(trackId) {
-  // This is hardcoded for testing. 
-  // Later, you will replace this with a real fetch call.
-  return [
-    { id: 1, text: "Wait for the song to start...", startMs: 0, endMs: 5000 },
-    { id: 2, text: "Hello from the other side", startMs: 5000, endMs: 10000 },
-    { id: 3, text: "I must have called a thousand times", startMs: 10000, endMs: 15000 },
-    { id: 4, text: "To tell you I'm sorry", startMs: 15000, endMs: 20000 },
-    { id: 5, text: "For everything that I've done", startMs: 20000, endMs: 25000 },
-    { id: 6, text: "But when I call you never seem to be home", startMs: 25000, endMs: 30000 },
-  ];
+export function parseGeniusLyrics(rawText) {
+  if (!rawText) return [];
+
+  // Split text, remove empty lines, and remove "Junk" headers
+  const lines = rawText
+    .split("\n")
+    .map(line => line.trim())
+    .filter(line => 
+      line.length > 0 &&                 // No empty lines
+      !line.startsWith("[") &&           // No [Chorus], [Verse]
+      !line.toLowerCase().includes("lyrics") // No "Song Name Lyrics" headers
+    );
+
+  // Assign each line a 5-second duration
+  return lines.map((line, index) => {
+    return {
+      id: index,
+      text: line,
+      startMs: index * 5000,       // 0s, 5s, 10s...
+      endMs: (index + 1) * 5000,   // 5s, 10s, 15s...
+    };
+  });
 }
 
-// --- 4. CONNECT TO EVA (AI Text) ---
 export async function getTranslationVibe(id, text, targetLanguage = "English") {
-  // PROBLEM: Elif sends 1 line. Your Python API wants a LIST of lines.
-  // FIX: We wrap her single line into a list before sending.
   const payload = {
-    lines: [
-      { timestamp_ms: 0, text: text } 
-    ],
-    targetLanguage: targetLanguage // Matches your Python Pydantic model
+    lines: [{ timestamp_ms: 0, text: text }],
+    targetLanguage: targetLanguage,
   };
 
   const res = await fetch(`${API_BASE}/analyze-lyrics`, {
@@ -45,27 +44,22 @@ export async function getTranslationVibe(id, text, targetLanguage = "English") {
 
   const data = await res.json();
 
-  // PROBLEM: Your API returns { translated_lines, vibe_keywords, ... }
-  // Elif expects { translated, emotion, themes ... }
-  // FIX: We map your response back to what she expects.
   return {
     id: id,
-    translated: data.translated_lines[0].text, 
+    translated: data.translated_lines[0].text,
     emotion: data.vibe_keywords[0] || "neutral",
     themes: data.vibe_keywords,
     colors: data.colors,
-    imagePrompt: `A ${data.vibe_keywords.join(", ")} scene representing: ${text}`
+    imagePrompt: `A ${data.vibe_keywords.join(", ")} scene representing: ${text}`,
   };
 }
 
-// --- 5. CONNECT TO NOMI (AI Image) ---
 export async function getVibeImage(id, colors, imagePrompt) {
-  // Nomi's API expects specific fields like "lyric_lines" and "emotion"
   const payload = {
-    lyric_lines: [imagePrompt], 
-    emotion: "artistic", 
+    lyric_lines: [imagePrompt],
+    emotion: "artistic",
     themes: ["music", "vibe"],
-    style: "digital art"
+    style: "digital art",
   };
 
   const res = await fetch(`${API_BASE}/ai-image/generate-image`, {
@@ -76,8 +70,7 @@ export async function getVibeImage(id, colors, imagePrompt) {
 
   const data = await res.json();
 
-  // Return the base64 URL that Nomi generates
   return {
-    imageUrl: data.image_data_url
+    imageUrl: data.image_data_url,
   };
 }
