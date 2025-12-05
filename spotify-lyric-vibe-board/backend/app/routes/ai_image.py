@@ -3,9 +3,10 @@ from __future__ import annotations
 import os
 import base64
 from io import BytesIO
+from typing import List
+
 from PIL import Image
 import textwrap
-from typing import List, Optional
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException, status
@@ -21,32 +22,42 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 router = APIRouter(prefix="/api/ai-image", tags=["ai-image"])
 
 
+# -------------------------------------------------------------------
+# Request / Response Models
+# -------------------------------------------------------------------
+
+
 class GenerateImageRequest(BaseModel):
-    lyric_lines: List[str] = Field(
+    """
+    Input shape is designed to match the output from /api/analyze-lyrics
+    so the frontend can pass it directly.
+    """
+    translation: str = Field(
         ...,
-        description="Lyric lines that capture the vibe",
+        description="Translated lyric line(s) from /api/analyze-lyrics",
     )
-    emotion: Optional[str] = Field(
-        None,
-        description="Primary emotion inferred from the current lyric section",
+    vibe_keywords: str = Field(
+        ...,
+        description="Comma-separated vibe keywords (e.g., 'reflective, contemplative')",
     )
-    themes: Optional[List[str]] = Field(
-        None,
-        description="List of themes extracted from the lyrics",
-    )
-    style: Optional[str] = Field(
-        None,
-        description=(
-            "Optional style direction (e.g., 'watercolor', 'cyberpunk', 'vintage film'). "
-            "If not provided, a mixed collage vibe-board style is used."
-        ),
+    colors: List[str] = Field(
+        ...,
+        description="Hex color codes suggested by /api/analyze-lyrics",
+        min_items=1,
     )
 
-    @validator("lyric_lines")
-    def lyric_lines_must_not_be_empty(cls, value: List[str]) -> List[str]:  # noqa: N805
-        cleaned = [line.strip() for line in value if line.strip()]
+    @validator("translation")
+    def translation_must_not_be_empty(cls, value: str) -> str:  # noqa: N805
+        cleaned = value.strip()
         if not cleaned:
-            raise ValueError("At least one non-empty lyric line is required")
+            raise ValueError("translation must not be empty")
+        return cleaned
+
+    @validator("colors")
+    def colors_must_not_be_empty(cls, value: List[str]) -> List[str]:  # noqa: N805
+        cleaned = [c.strip() for c in value if c.strip()]
+        if not cleaned:
+            raise ValueError("At least one color is required")
         return cleaned
 
 
@@ -55,53 +66,57 @@ class GenerateImageResponse(BaseModel):
     image_data_url: str
 
 
+# -------------------------------------------------------------------
+# Helper functions
+# -------------------------------------------------------------------
+
+
 def _build_prompt(payload: GenerateImageRequest) -> str:
     """
-    Build a concise text prompt from the lyric context suitable for
-    a *mixed aesthetic collage vibe board* (option C).
+    Build a concise text prompt from the ai-text output suitable for
+    a mixed aesthetic collage vibe board.
     """
-    lyric_section = " / ".join(payload.lyric_lines)
+    lyric_text = payload.translation
 
-    # Default style if user doesn't specify one
-    base_style = (
-        "a mixed aesthetic collage vibe board, combining stylized illustrations, "
-        "abstract textures, soft lighting, and layered typography"
-    )
-    style = payload.style or base_style
+    # Split "reflective, contemplative" -> ["reflective", "contemplative"]
+    keywords = [k.strip() for k in payload.vibe_keywords.split(",") if k.strip()]
+    emotion = keywords[0] if keywords else ""
+    themes_text = ", ".join(keywords) if keywords else "infer key themes from the lyrics and vibe"
 
-    themes_text = ", ".join(payload.themes) if payload.themes else ""
-    emotion_text = payload.emotion or ""
+    color_palette = ", ".join(payload.colors)
 
-    # Natural-language prompt for the image model
     prompt = f"""
-    Create {base_style}.
-    The collage should visually express these song lyrics: "{lyric_section}".
+    Create a mixed aesthetic collage vibe board, combining stylized illustrations,
+    abstract textures, soft lighting, and layered typography.
 
-    Overall emotion: {emotion_text or "use the emotional tone inferred from the lyrics"}.
-    Important themes: {themes_text or "infer key themes from the lyrics"}.
+    Song meaning / translation:
+    "{lyric_text}"
+
+    Dominant emotion / vibe: {emotion or "use the emotional tone suggested by the vibe keywords"}.
+    Themes: {themes_text}.
+    Color palette: {color_palette}.
 
     Design details:
-    - Use harmonious colors that match the mood.
+    - Use the provided colors prominently to reflect the mood.
     - Include subtle text snippets or handwritten-style words inspired by key lyrics.
     - Blend abstract shapes, light leaks, and textures for depth.
     - Keep the design clean enough to work as a modern digital vibe board.
-    Style: {style}.
     """
 
-    # Keep it to a reasonable length for the API
     prompt = textwrap.dedent(prompt).strip()
     return textwrap.shorten(prompt, width=800, placeholder=" …")
 
 
 def _generate_image_data_url(prompt: str) -> str:
     """
-    Generate large image first, then compress + downscale to a small JPEG.
+    Call OpenAI's image generation API, then compress + downscale
+    the image to a small JPEG for faster loading in the frontend.
     """
     try:
         response = client.images.generate(
             model="gpt-image-1",
             prompt=prompt,
-            size="auto"  # Let model choose, then we compress ourselves
+            size="auto",  # Let the model pick, we compress afterwards
         )
     except Exception as e:
         print(f"[ai-image] OpenAI image generation error: {type(e).__name__}: {e}")
@@ -116,29 +131,30 @@ def _generate_image_data_url(prompt: str) -> str:
             detail="AI image service returned an empty result.",
         )
 
-    # Decode original PNG
+    # Decode original PNG from OpenAI
     png_b64 = response.data[0].b64_json
     png_bytes = base64.b64decode(png_b64)
 
-    # Open with Pillow
+    # Open with Pillow and convert to RGB
     img = Image.open(BytesIO(png_bytes)).convert("RGB")
 
     # Resize smaller for frontend performance
-    max_dim = 512  # Target resolution — tweakable
+    max_dim = 512  # tweakable (both width & height max)
     img.thumbnail((max_dim, max_dim), Image.LANCZOS)
 
-    # Convert to tiny JPEG
+    # Save as compressed JPEG in memory
     buf = BytesIO()
     img.save(buf, format="JPEG", quality=65, optimize=True)
     jpeg_bytes = buf.getvalue()
 
-    # Convert back to base64
+    # Convert back to base64 data URL
     jpeg_b64 = base64.b64encode(jpeg_bytes).decode("utf-8")
     return f"data:image/jpeg;base64,{jpeg_b64}"
 
 
-
-
+# -------------------------------------------------------------------
+# Route
+# -------------------------------------------------------------------
 
 
 @router.post(
@@ -151,11 +167,16 @@ def generate_image(payload: GenerateImageRequest) -> GenerateImageResponse:
     """
     Real AI image endpoint.
 
-    Takes lyric context (lines, emotion, themes, style), builds a collage-style
-    vibe-board prompt, and calls OpenAI's image generation API. Returns:
+    Expects the JSON produced by /api/analyze-lyrics:
+    {
+      "translation": "...",
+      "vibe_keywords": "kw1, kw2",
+      "colors": ["#Hex1", "#Hex2"]
+    }
 
-    - `prompt`: the exact text sent to the image model
-    - `image_data_url`: a `data:image/png;base64,...` URL that the frontend can display
+    Returns:
+    - prompt: the exact text sent to the image model
+    - image_data_url: a data:image/jpeg;base64,... URL that the frontend can display
     """
     prompt = _build_prompt(payload)
     if not prompt:
@@ -166,3 +187,4 @@ def generate_image(payload: GenerateImageRequest) -> GenerateImageResponse:
 
     data_url = _generate_image_data_url(prompt)
     return GenerateImageResponse(prompt=prompt, image_data_url=data_url)
+
