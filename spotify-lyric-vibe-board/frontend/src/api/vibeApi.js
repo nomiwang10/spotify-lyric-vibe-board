@@ -1,4 +1,3 @@
-// MUST match your backend URL exactly
 const API_BASE = "http://127.0.0.1:8000/api";
 
 export async function getCurrentTrack() {
@@ -6,52 +5,61 @@ export async function getCurrentTrack() {
   return res.json();
 }
 
+// Helper to clean up Genius text
 export function parseGeniusLyrics(rawText) {
   if (!rawText) return [];
 
-  // Split text, remove empty lines, and remove "Junk" headers
   const lines = rawText
     .split("\n")
     .map(line => line.trim())
     .filter(line => 
-      line.length > 0 &&                 // No empty lines
-      !line.startsWith("[") &&           // No [Chorus], [Verse]
-      !line.toLowerCase().includes("lyrics") // No "Song Name Lyrics" headers
+      line.length > 0 && 
+      !line.startsWith("[") && 
+      !line.toLowerCase().includes("lyrics")
     );
 
-  // Assign each line a 5-second duration
   return lines.map((line, index) => {
     return {
       id: index,
       text: line,
-      startMs: index * 5000,       // 0s, 5s, 10s...
-      endMs: (index + 1) * 5000,   // 5s, 10s, 15s...
+      startMs: index * 5000,
+      endMs: (index + 1) * 5000,
     };
   });
 }
 
-export async function getTranslationVibe(id, text, targetLanguage = "English") {
+// --- CHANGE: Sends the whole list, returns the 'results' array ---
+export async function getTranslationVibe(lines, targetLanguage = "English") {
+  const cleanLines = lines.map(line => ({
+    id: line.id,
+    text: line.text
+  }));
+
   const payload = {
-    lines: [{ timestamp_ms: 0, text: text }],
-    targetLanguage: targetLanguage,
+    lines: cleanLines,
+    targetLanguage: targetLanguage
   };
 
-  const res = await fetch(`${API_BASE}/analyze-lyrics`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  try {
+    const res = await fetch(`${API_BASE}/analyze-lyrics`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
-  const data = await res.json();
+    // SAFETY CHECK: If the server errors (500), don't try to parse JSON
+    if (!res.ok) {
+      console.error("Server Error:", res.status, res.statusText);
+      return []; // Return an empty list so the app doesn't crash
+    }
 
-  return {
-    id: id,
-    translated: data.translated_lines[0].text,
-    emotion: data.vibe_keywords[0] || "neutral",
-    themes: data.vibe_keywords,
-    colors: data.colors,
-    imagePrompt: `A ${data.vibe_keywords.join(", ")} scene representing: ${text}`,
-  };
+    const data = await res.json();
+    return data.results || []; // Safety fallbacks
+    
+  } catch (err) {
+    console.error("Network Error:", err);
+    return []; // Return empty list on failure
+  }
 }
 
 export async function getVibeImage(id, colors, imagePrompt) {
@@ -69,8 +77,5 @@ export async function getVibeImage(id, colors, imagePrompt) {
   });
 
   const data = await res.json();
-
-  return {
-    imageUrl: data.image_data_url,
-  };
+  return { imageUrl: data.image_data_url };
 }
