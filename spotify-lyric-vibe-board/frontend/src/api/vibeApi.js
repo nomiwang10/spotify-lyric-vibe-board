@@ -28,8 +28,8 @@ export function parseGeniusLyrics(rawText) {
   });
 }
 
-// --- CHANGE: Sends the whole list, returns the 'results' array ---
 export async function getTranslationVibe(lines, targetLanguage = "English") {
+  // We strip out the timestamps for the AI to save tokens, just sending ID and Text
   const cleanLines = lines.map(line => ({
     id: line.id,
     text: line.text
@@ -40,26 +40,16 @@ export async function getTranslationVibe(lines, targetLanguage = "English") {
     targetLanguage: targetLanguage
   };
 
-  try {
-    const res = await fetch(`${API_BASE}/analyze-lyrics`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+  const res = await fetch(`${API_BASE}/analyze-lyrics`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 
-    // SAFETY CHECK: If the server errors (500), don't try to parse JSON
-    if (!res.ok) {
-      console.error("Server Error:", res.status, res.statusText);
-      return []; // Return an empty list so the app doesn't crash
-    }
-
-    const data = await res.json();
-    return data.results || []; // Safety fallbacks
-    
-  } catch (err) {
-    console.error("Network Error:", err);
-    return []; // Return empty list on failure
-  }
+  const data = await res.json();
+  
+  // Return the list of results
+  return data.results; 
 }
 
 export async function getVibeImage(id, colors, imagePrompt) {

@@ -10,7 +10,14 @@ export default function VibeBoard() {
   const [track, setTrack] = useState(null);
   
   // Raw Lyrics (from Genius)
+  
+  // Raw Lyrics (from Genius)
   const [lyrics, setLyrics] = useState([]);
+  
+  // AI Analyzed Data (Batch Fetched)
+  const [analyzedData, setAnalyzedData] = useState([]); 
+  
+  const [currentLineIndex, setCurrentLineIndex] = useState(-1);
   
   // AI Analyzed Data (Batch Fetched)
   const [analyzedData, setAnalyzedData] = useState([]); 
@@ -21,6 +28,7 @@ export default function VibeBoard() {
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState(null);
 
+  // --- 1. CONNECT & POLL SPOTIFY ---
   // --- 1. CONNECT & POLL SPOTIFY ---
   useEffect(() => {
     if (!isConnected) return;
@@ -72,14 +80,19 @@ export default function VibeBoard() {
       }
     }, 1000);
 
+
     return () => clearInterval(interval);
   }, [isConnected, currentLineIndex, analyzedData, lyrics]);
+  }, [isConnected, currentLineIndex, analyzedData, lyrics]);
 
+  // --- 2. LOAD LYRICS & BATCH ANALYZE ---
+  // This runs ONCE when the song changes
   // --- 2. LOAD LYRICS & BATCH ANALYZE ---
   // This runs ONCE when the song changes
   useEffect(() => {
     if (!track?.lyrics) return;
 
+    // 1. Process Genius Text
     // 1. Process Genius Text
     const processedLyrics = parseGeniusLyrics(track.lyrics);
     
@@ -135,6 +148,7 @@ export default function VibeBoard() {
         backgroundSize: "cover",
         backgroundPosition: "center",
         transition: "background 0.5s ease-in-out",
+        transition: "background 0.5s ease-in-out",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -148,6 +162,7 @@ export default function VibeBoard() {
         <select
           value={targetLanguage}
           onChange={(e) => setTargetLanguage(e.target.value)}
+          style={{ padding: "8px", fontSize: "1rem", color: "black" }}
           style={{ padding: "8px", fontSize: "1rem", color: "black" }}
         >
           <option value="English">English</option>
@@ -171,14 +186,22 @@ export default function VibeBoard() {
       <main style={{ textAlign: "center", maxWidth: "800px" }}>
         {!isConnected ? (
           <button onClick={handleConnect} style={{ padding: "15px", fontSize: "1.5rem", borderRadius:"30px" }}>
+          <button onClick={handleConnect} style={{ padding: "15px", fontSize: "1.5rem", borderRadius:"30px" }}>
             Connect Spotify
           </button>
         ) : currentLyric ? (
+        ) : currentLyric ? (
           <>
+            {/* ORIGINAL LYRIC */}
             {/* ORIGINAL LYRIC */}
             <p style={{ fontSize: "2.5rem", marginBottom: "20px" }}>
               {currentLyric.text}
+              {currentLyric.text}
             </p>
+            
+            {/* TRANSLATION (From Batch Data) */}
+            <p style={{ fontSize: "1.5rem", opacity: 0.9, color: "#ffcc00" }}>
+              {currentVibe ? currentVibe.translated : "Analyzing song..."}
             
             {/* TRANSLATION (From Batch Data) */}
             <p style={{ fontSize: "1.5rem", opacity: 0.9, color: "#ffcc00" }}>
@@ -187,7 +210,11 @@ export default function VibeBoard() {
 
             {/* VIBE TAGS (From Batch Data) */}
             {currentVibe && (
+            {/* VIBE TAGS (From Batch Data) */}
+            {currentVibe && (
               <div style={{ marginTop: "30px" }}>
+                <span style={{ background: "rgba(255,255,255,0.2)", padding: "8px 16px", borderRadius: "20px" }}>
+                  {currentVibe.vibe}
                 <span style={{ background: "rgba(255,255,255,0.2)", padding: "8px 16px", borderRadius: "20px" }}>
                   {currentVibe.vibe}
                 </span>

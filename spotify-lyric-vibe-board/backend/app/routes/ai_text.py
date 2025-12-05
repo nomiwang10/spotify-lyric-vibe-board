@@ -21,45 +21,45 @@ class LyricBatch(BaseModel):
 
 @router.post("/analyze-lyrics")
 def analyze_lyrics(request: LyricBatch):
-    print(f"--- STARTED AI ANALYSIS ---")
-    print(f"Received {len(request.lines)} lines to analyze.")
-
+    """
+    Takes the FULL song lyrics.
+    Returns: A list of analyzed objects (Translation + Vibe) for every line.
+    """
     try:
-        # 1. Truncate to save money/time (First 15 lines only)
-        truncated_lines = request.lines[:15] 
-        input_data = [line.dict() for line in truncated_lines]
+        # We process 20 lines at a time to prevent AI timeouts if the song is huge
+        # But for simplicity, let's try sending the whole batch first.
         
-        # 2. Convert to string safely
-        json_input = json.dumps(input_data)
-
         prompt = f"""
         I have a list of song lyric lines.
         Target Language: {request.targetLanguage}
         
-        For EACH line, provide:
+        For EACH line in the input, provide:
         1. Translated text
-        2. A short 'vibe' keyword
-        3. A hex color code.
+        2. A short 'vibe' keyword (e.g. 'Sad', 'Energetic')
+        3. A hex color code that matches that specific line.
 
-        Input Data:
-        {json_input}
+        Input Data: {json.dumps([line.dict() for line in request.lines])}
 
-        Return ONLY a JSON object with a key "results" containing the list.
+        Return ONLY a JSON object with a single key "results" containing a list of objects.
+        The list MUST be in the exact same order as the input.
+        
+        Format:
+        {{
+            "results": [
+                {{ "id": 0, "translated": "...", "vibe": "...", "color": "#..." }},
+                {{ "id": 1, "translated": "...", "vibe": "...", "color": "#..." }}
+            ]
+        }}
         """
 
-        print("Sending request to OpenAI...")
-        
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"}
         )
         
-        raw_content = response.choices[0].message.content
-        print(f"OpenAI Responded! Length: {len(raw_content)}")
-        
-        parsed = json.loads(raw_content)
-        return parsed
+        ai_content = json.loads(response.choices[0].message.content)
+        return ai_content
 
     except Exception as e:
         # --- THIS IS THE IMPORTANT PART ---
