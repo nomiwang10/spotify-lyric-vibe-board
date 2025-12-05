@@ -8,61 +8,52 @@ import {
 
 export default function VibeBoard() {
   const [track, setTrack] = useState(null);
+  
+  // Raw Lyrics (from Genius)
   const [lyrics, setLyrics] = useState([]);
-  const [currentLine, setCurrentLine] = useState(null);
-  const [translation, setTranslation] = useState(null);
+  
+  // AI Analyzed Data (Batch Fetched)
+  const [analyzedData, setAnalyzedData] = useState([]); 
+  
+  const [currentLineIndex, setCurrentLineIndex] = useState(-1);
   const [backgroundImage, setBackgroundImage] = useState("");
   const [targetLanguage, setTargetLanguage] = useState("English");
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState(null);
 
-  // Poll Spotify every second for current track progress
+  // --- 1. CONNECT & POLL SPOTIFY ---
   useEffect(() => {
     if (!isConnected) return;
 
     const interval = setInterval(async () => {
       try {
         const trackData = await getCurrentTrack();
-        
         if (trackData.error) {
           setError(trackData.error);
           return;
         }
-
         setTrack(trackData);
         setError(null);
 
-        // --- NEW LOGIC START ---
+        // --- SYNC LOGIC ---
+        // Calculate which line index we are on (5 seconds per line)
+        const newIndex = Math.floor(trackData.progress_ms / 5000);
         
-        const currentTimeMs = trackData.progress_ms; 
-
-        // 1. MATH MAGIC: Calculate exactly which line index we should be on.
-        // If we are at 12 seconds, 12000 / 5000 = 2.4 -> Index 2.
-        const lyricIndex = Math.floor(currentTimeMs / 5000);
-
-        // 2. SAFETY: Make sure that index actually exists in our lyrics list
-        if (lyrics.length > 0 && lyricIndex < lyrics.length) {
-          const activeLine = lyrics[lyricIndex];
-
-          // 3. UPDATE: Only fetch AI if the line has changed
-          if (activeLine && activeLine.id !== currentLine?.id) {
-            setCurrentLine(activeLine);
-
-            // Get translation + vibe
-            const vibeData = await getTranslationVibe(
-              activeLine.id,
-              activeLine.text,
-              targetLanguage
-            );
-            setTranslation(vibeData);
-
-            // Get background image
-            const imageData = await getVibeImage(
-              vibeData.id,
-              vibeData.colors,
-              vibeData.imagePrompt
-            );
-            setBackgroundImage(imageData.imageUrl);
+        // Only update if the line actually changed
+        if (newIndex !== currentLineIndex) {
+          setCurrentLineIndex(newIndex);
+          
+          // --- IMAGE LOGIC (Still Live) ---
+          // We still generate images live because generating 50 images at once is too slow.
+          // We only generate if we have AI data for this line.
+          if (analyzedData[newIndex]) {
+             const data = analyzedData[newIndex];
+             // Construct a prompt based on the PRE-FETCHED vibe
+             const prompt = `A ${data.vibe} scene representing: ${lyrics[newIndex].text}`;
+             
+             getVibeImage(newIndex, [data.color], prompt).then(img => {
+                setBackgroundImage(img.imageUrl);
+             });
           }
         }
 
@@ -70,24 +61,43 @@ export default function VibeBoard() {
         console.error(err);
       }
     }, 1000);
-    return () => clearInterval(interval);
-  }, [isConnected, lyrics, currentLine, targetLanguage]);
 
-  // Update lyrics whenever the track changes
+    return () => clearInterval(interval);
+  }, [isConnected, currentLineIndex, analyzedData, lyrics]);
+
+  // --- 2. LOAD LYRICS & BATCH ANALYZE ---
+  // This runs ONCE when the song changes
   useEffect(() => {
     if (!track?.lyrics) return;
 
-    // Use our new helper to chop up the Genius text
+    // 1. Process Genius Text
     const processedLyrics = parseGeniusLyrics(track.lyrics);
-    setLyrics(processedLyrics);
-  }, [track?.lyrics]);
+    
+    // Only run if it's a NEW song (compare IDs or check if lyrics changed)
+    // For simplicity, we just check if lyrics length is different or if it's empty
+    if (processedLyrics.length > 0 && lyrics.length !== processedLyrics.length) {
+       setLyrics(processedLyrics);
+       setAnalyzedData([]); // Clear old AI data
+       
+       console.log("Fetching Batch AI Analysis...");
+       
+       // 2. Call AI for the WHOLE song
+       getTranslationVibe(processedLyrics, targetLanguage)
+         .then(results => {
+            console.log("AI Analysis Complete!", results);
+            // Map results back to an array where index matches lyric index
+            // The API returns a list, we just save it.
+            setAnalyzedData(results);
+         })
+         .catch(err => console.error("AI Batch Error:", err));
+    }
+  }, [track?.lyrics, targetLanguage]); 
+  // Note: If you change Language, it re-runs the batch!
 
   function handleConnect() {
-    // Redirect to Spotify auth (Using 127.0.0.1 to match backend)
     window.location.href = "http://127.0.0.1:8000/auth/login";
   }
 
-  // Check if already authenticated on load
   useEffect(() => {
     getCurrentTrack()
       .then((data) => {
@@ -99,15 +109,20 @@ export default function VibeBoard() {
       .catch(() => {});
   }, []);
 
+  // Helper to safely get current data
+  const currentLyric = lyrics[currentLineIndex];
+  const currentVibe = analyzedData[currentLineIndex];
+
   return (
     <div
       style={{
         minHeight: "100vh",
+        // Use the AI color as backup if image is loading
+        backgroundColor: currentVibe?.color || "#1a1a2e",
         backgroundImage: backgroundImage ? `url(${backgroundImage})` : "none",
-        backgroundColor: "#1a1a2e",
         backgroundSize: "cover",
         backgroundPosition: "center",
-        transition: "background-image 0.5s ease-in-out",
+        transition: "background 0.5s ease-in-out",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -117,30 +132,22 @@ export default function VibeBoard() {
         padding: "20px",
       }}
     >
-      {/* Language selector */}
       <div style={{ position: "absolute", top: 20, right: 20 }}>
         <select
           value={targetLanguage}
           onChange={(e) => setTargetLanguage(e.target.value)}
-          style={{ padding: "8px", fontSize: "1rem" }}
+          style={{ padding: "8px", fontSize: "1rem", color: "black" }}
         >
           <option value="English">English</option>
           <option value="Spanish">Spanish</option>
           <option value="French">French</option>
-          <option value="German">German</option>
-          <option value="Japanese">Japanese</option>
-          <option value="Korean">Korean</option>
-          <option value="Chinese">Chinese</option>
-          <option value="Turkish">Turkish</option>
           <option value="Hindi">Hindi</option>
         </select>
       </div>
 
-      {/* Header - song info */}
       <header style={{ position: "absolute", top: 20, left: 20 }}>
         {track ? (
           <>
-            {/* --- FIX 2: Use 'track.song' (matches Python backend) --- */}
             <h2>{track.song}</h2>
             <p>{track.artist}</p>
           </>
@@ -149,67 +156,35 @@ export default function VibeBoard() {
         )}
       </header>
 
-      {/* Main content */}
       <main style={{ textAlign: "center", maxWidth: "800px" }}>
         {!isConnected ? (
-          <button
-            onClick={handleConnect}
-            style={{
-              fontSize: "1.5rem",
-              padding: "15px 30px",
-              cursor: "pointer",
-              background: "#1DB954",
-              color: "white",
-              border: "none",
-              borderRadius: "30px",
-            }}
-          >
+          <button onClick={handleConnect} style={{ padding: "15px", fontSize: "1.5rem", borderRadius:"30px" }}>
             Connect Spotify
           </button>
-        ) : error ? (
-          <p style={{ fontSize: "1.5rem" }}>{error}</p>
-        ) : currentLine ? (
+        ) : currentLyric ? (
           <>
+            {/* ORIGINAL LYRIC */}
             <p style={{ fontSize: "2.5rem", marginBottom: "20px" }}>
-              {currentLine.text}
+              {currentLyric.text}
             </p>
-            <p style={{ fontSize: "1.5rem", opacity: 0.9 }}>
-              {translation?.translated || "Translating..."}
+            
+            {/* TRANSLATION (From Batch Data) */}
+            <p style={{ fontSize: "1.5rem", opacity: 0.9, color: "#ffcc00" }}>
+              {currentVibe ? currentVibe.translated : "Analyzing song..."}
             </p>
 
-            {translation && (
+            {/* VIBE TAGS (From Batch Data) */}
+            {currentVibe && (
               <div style={{ marginTop: "30px" }}>
-                <span
-                  style={{
-                    background: "rgba(255,255,255,0.2)",
-                    padding: "8px 16px",
-                    borderRadius: "20px",
-                    marginRight: "10px",
-                  }}
-                >
-                  {translation.emotion}
+                <span style={{ background: "rgba(255,255,255,0.2)", padding: "8px 16px", borderRadius: "20px" }}>
+                  {currentVibe.vibe}
                 </span>
-                {translation.themes?.map((theme) => (
-                  <span
-                    key={theme}
-                    style={{
-                      background: "rgba(255,255,255,0.1)",
-                      padding: "5px 12px",
-                      borderRadius: "15px",
-                      marginRight: "8px",
-                      fontSize: "0.9rem",
-                    }}
-                  >
-                    {theme}
-                  </span>
-                ))}
               </div>
             )}
           </>
         ) : (
           <p style={{ fontSize: "1.5rem" }}>
-            {/* If we are here, lyrics exist but we are between lines */}
-            {lyrics.length > 0 ? "Wait for lyrics..." : "Play a song on Spotify!"}
+             {analyzedData.length > 0 ? "Wait for lyrics..." : "Loading Song..."}
           </p>
         )}
       </main>

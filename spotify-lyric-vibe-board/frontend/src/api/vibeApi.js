@@ -30,10 +30,16 @@ export function parseGeniusLyrics(rawText) {
   });
 }
 
-export async function getTranslationVibe(id, text, targetLanguage = "English") {
+export async function getTranslationVibe(lines, targetLanguage = "English") {
+  // We strip out the timestamps for the AI to save tokens, just sending ID and Text
+  const cleanLines = lines.map(line => ({
+    id: line.id,
+    text: line.text
+  }));
+
   const payload = {
-    lines: [{ timestamp_ms: 0, text: text }],
-    targetLanguage: targetLanguage,
+    lines: cleanLines,
+    targetLanguage: targetLanguage
   };
 
   const res = await fetch(`${API_BASE}/analyze-lyrics`, {
@@ -43,15 +49,9 @@ export async function getTranslationVibe(id, text, targetLanguage = "English") {
   });
 
   const data = await res.json();
-
-  return {
-    id: id,
-    translated: data.translated_lines[0].text,
-    emotion: data.vibe_keywords[0] || "neutral",
-    themes: data.vibe_keywords,
-    colors: data.colors,
-    imagePrompt: `A ${data.vibe_keywords.join(", ")} scene representing: ${text}`,
-  };
+  
+  // Return the list of results
+  return data.results; 
 }
 
 export async function getVibeImage(id, colors, imagePrompt) {

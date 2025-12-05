@@ -12,44 +12,43 @@ router = APIRouter(prefix="/api")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 class LyricLine(BaseModel):
-    timestamp_ms: int 
+    id: int
     text: str
 
 class LyricBatch(BaseModel):
     lines: List[LyricLine]
-    # --- CHANGE 1: Renamed to match Frontend camelCase ---
     targetLanguage: str = "English" 
 
 @router.post("/analyze-lyrics")
 def analyze_lyrics(request: LyricBatch):
     """
-    Takes a LIST of lyric lines with timestamps.
-    Returns: Translated lines (preserves time) + Vibe + Colors.
+    Takes the FULL song lyrics.
+    Returns: A list of analyzed objects (Translation + Vibe) for every line.
     """
     try:
-        # Convert list of objects to a clean string format for the AI
-        input_data = [
-            {"time": line.timestamp_ms, "text": line.text} 
-            for line in request.lines
-        ]
-
-        prompt = f"""
-        I have a list of song lyrics with timestamps (in milliseconds). 
+        # We process 20 lines at a time to prevent AI timeouts if the song is huge
+        # But for simplicity, let's try sending the whole batch first.
         
-        # --- CHANGE 2: Updated variable reference ---
-        Task 1: Translate the text of each line into {request.targetLanguage}.
-        Task 2: Analyze the overall emotional 'vibe' of this section.
-        Task 3: Pick 2 hex color codes that match this vibe.
+        prompt = f"""
+        I have a list of song lyric lines.
+        Target Language: {request.targetLanguage}
+        
+        For EACH line in the input, provide:
+        1. Translated text
+        2. A short 'vibe' keyword (e.g. 'Sad', 'Energetic')
+        3. A hex color code that matches that specific line.
 
-        Input Data: {json.dumps(input_data)}
+        Input Data: {json.dumps([line.dict() for line in request.lines])}
 
-        Return ONLY a JSON object in this format:
+        Return ONLY a JSON object with a single key "results" containing a list of objects.
+        The list MUST be in the exact same order as the input.
+        
+        Format:
         {{
-            "translated_lines": [
-                {{"time": 1234, "text": "translated text here"}}
-            ],
-            "vibe_keywords": ["keyword1", "keyword2"],
-            "colors": ["#Hex1", "#Hex2"]
+            "results": [
+                {{ "id": 0, "translated": "...", "vibe": "...", "color": "#..." }},
+                {{ "id": 1, "translated": "...", "vibe": "...", "color": "#..." }}
+            ]
         }}
         """
 
@@ -59,9 +58,7 @@ def analyze_lyrics(request: LyricBatch):
             response_format={"type": "json_object"}
         )
         
-        # Parse the result
         ai_content = json.loads(response.choices[0].message.content)
-        
         return ai_content
 
     except Exception as e:
