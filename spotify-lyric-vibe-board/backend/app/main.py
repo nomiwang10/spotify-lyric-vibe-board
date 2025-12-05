@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 # CHANGE 1: Import your teammates' files too
-from app.routes import ai_text, spotify, ai_image 
+from app.routes import ai_text, spotify, genius, ai_image 
 
 app = FastAPI()
 
