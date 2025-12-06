@@ -42,7 +42,8 @@ def get_current_song():
         )
 
         if not oauth.get_cached_token():
-            return {"status": "paused", "message": "Not logged in. Please connect Spotify."}
+            return {"error": "not_authenticated"}
+
 
         sp = Spotify(auth_manager=oauth)
         current_track = sp.current_user_playing_track()

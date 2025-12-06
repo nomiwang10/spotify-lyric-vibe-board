@@ -2,7 +2,8 @@ import os
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 from spotipy.oauth2 import SpotifyOAuth
-
+from dotenv import load_dotenv
+load_dotenv()
 router = APIRouter(prefix="/auth")
 
 def get_oauth():

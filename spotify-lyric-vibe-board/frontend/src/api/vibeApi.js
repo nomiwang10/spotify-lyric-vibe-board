@@ -24,8 +24,7 @@ export function parseGeniusLyrics(rawText) {
     return {
       id: index,
       text: line,
-      startMs: index * 5000,       // 0s, 5s, 10s...
-      endMs: (index + 1) * 5000,   // 5s, 10s, 15s...
+      timestamp_ms: index * 5000
     };
   });
 }

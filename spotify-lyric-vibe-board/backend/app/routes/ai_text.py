@@ -4,9 +4,14 @@ from typing import List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from openai import OpenAI
+# Force-load the .env file from the same folder this file lives in
 from dotenv import load_dotenv
+import os
 
-load_dotenv()
+dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
+print("Loading .env from:", dotenv_path)  # Temporary debug line
+load_dotenv(dotenv_path)
+
 
 router = APIRouter(prefix="/api")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -67,3 +72,4 @@ def analyze_lyrics(request: LyricBatch):
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=f"AI processing failed: {e}")
+    

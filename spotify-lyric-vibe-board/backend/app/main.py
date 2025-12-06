@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routes import ai_text, spotify, ai_image, genius
 from app.routes import auth
 
+
 app = FastAPI()
 
 app.include_router(auth.router)
@@ -28,6 +29,7 @@ app.add_middleware(
 app.include_router(ai_text.router) 
 app.include_router(spotify.router)   
 app.include_router(ai_image.router)  
+
 
 # --- 3. Health Check Endpoint ---
 @app.get("/health")
