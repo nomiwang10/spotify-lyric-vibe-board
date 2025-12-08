@@ -220,3 +220,4 @@ build/
 backend/.env
 frontend/.env
 .vite
+spotify-lyric-vibe-board/backend/.spotify_cache

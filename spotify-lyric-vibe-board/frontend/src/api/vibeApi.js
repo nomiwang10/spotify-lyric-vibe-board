@@ -1,11 +1,14 @@
 const API_BASE = "http://127.0.0.1:8000/api";
 
 export async function getCurrentTrack() {
-  const res = await fetch(`${API_BASE}/current-song`);
-  return res.json();
+  try {
+    const res = await fetch(`${API_BASE}/current-song`);
+    return await res.json();
+  } catch (err) {
+    return { error: "Failed to connect to backend" };
+  }
 }
 
-// Helper to clean up Genius text
 export function parseGeniusLyrics(rawText) {
   if (!rawText) return [];
 
@@ -29,7 +32,6 @@ export function parseGeniusLyrics(rawText) {
 }
 
 export async function getTranslationVibe(lines, targetLanguage = "English") {
-  // We strip out the timestamps for the AI to save tokens, just sending ID and Text
   const cleanLines = lines.map(line => ({
     id: line.id,
     text: line.text
@@ -47,17 +49,17 @@ export async function getTranslationVibe(lines, targetLanguage = "English") {
   });
 
   const data = await res.json();
-  
-  // Return the list of results
   return data.results; 
 }
 
-export async function getVibeImage(id, colors, imagePrompt) {
+// --- FIX IS HERE ---
+// We now accept 'text' and 'vibe' specifically
+export async function getVibeImage(text, vibe) {
   const payload = {
-    lyric_lines: [imagePrompt],
-    emotion: "artistic",
-    themes: ["music", "vibe"],
-    style: "digital art",
+    lyric_lines: [text],   // Send the raw lyric line
+    emotion: vibe,         // Send the REAL vibe (e.g. "Sad", "Energetic")
+    themes: ["music", "abstract"],
+    style: "digital art, abstract, vibe board",
   };
 
   const res = await fetch(`${API_BASE}/ai-image/generate-image`, {

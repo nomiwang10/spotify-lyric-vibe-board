@@ -26,17 +26,18 @@ def analyze_lyrics(request: LyricBatch):
     Returns: A list of analyzed objects (Translation + Vibe) for every line.
     """
     try:
-        # We process 20 lines at a time to prevent AI timeouts if the song is huge
-        # But for simplicity, let's try sending the whole batch first.
-        
+        # --- HARDCODED ENGLISH FORCE ---
+        # We ignore request.targetLanguage and force English
+        forced_language = "English"
+
         prompt = f"""
         I have a list of song lyric lines.
-        Target Language: {request.targetLanguage}
+        Target Language: {forced_language} (STRICTLY ENFORCE THIS)
         
-        For EACH line in the input, provide:
-        1. Translated text
-        2. A short 'vibe' keyword (e.g. 'Sad', 'Energetic')
-        3. A hex color code that matches that specific line.
+        For EACH line in the input:
+        1. "translated": Translate the text to {forced_language}. If it is already in English, return it exactly as is.
+        2. "vibe": A short mood keyword (e.g. 'Sad', 'Energetic', 'Romantic')
+        3. "color": A hex color code that matches the mood.
 
         Input Data: {json.dumps([line.dict() for line in request.lines])}
 
@@ -62,11 +63,9 @@ def analyze_lyrics(request: LyricBatch):
         return ai_content
 
     except Exception as e:
-        # --- THIS IS THE IMPORTANT PART ---
         print("\n!!!!!!!!!!!!!! AI ERROR !!!!!!!!!!!!!!")
         print(f"ERROR TYPE: {type(e).__name__}")
         print(f"ERROR MESSAGE: {str(e)}")
         print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n")
         
-        # Return empty list so frontend doesn't crash, but log the error above
         return {"results": []}
