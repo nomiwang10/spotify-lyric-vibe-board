@@ -1,35 +1,45 @@
 import os
-import requests
+from dotenv import load_dotenv
+from lyricsgenius import Genius
 
-from bs4 import BeautifulSoup
+load_dotenv()
 
-GENIUS_TOKEN = os.getenv("GENIUS_ACCESS_TOKEN")
-BASE_URL = "https://api.genius.com"
+token = os.getenv("GENIUS_ACCESS_TOKEN")
 
+# Initialize Genius with settings to remove "junk" data
+genius = Genius(token)
+genius.verbose = False # Turn off status messages in console
+genius.remove_section_headers = True # Removes [Chorus], [Verse 1], etc.
+genius.skip_non_songs = True
+genius.excluded_terms = ["(Remix)", "(Live)"]
 
 def get_lyrics_from_genius(song_title: str, artist_name: str):
-    headers = {"Authorization": f"Bearer {GENIUS_TOKEN}"}
-
-    # Search for the song
-    search_url = f"{BASE_URL}/search"
-    params = {"q": f"{song_title} {artist_name}"}
-    response = requests.get(search_url, params=params, headers=headers).json()
-
     try:
-        # Get the top hit
-        song_path = response["response"]["hits"][0]["result"]["path"]
-        lyrics_page_url = "https://genius.com" + song_path
+        print(f"Searching Genius for: {song_title} by {artist_name}...")
+        
+        # 1. Search for the song
+        song = genius.search_song(song_title, artist_name)
+        
+        if song:
+            # 2. Get the lyrics
+            lyrics = song.lyrics
+            
+            # 3. CLEANING: Remove the first line if it's just the song title + "Lyrics"
+            # Genius often returns "Song Name Lyrics" as the first line.
+            lines = lyrics.split('\n')
+            if len(lines) > 0 and "Lyrics" in lines[0]:
+                lines = lines[1:]
+                
+            # 4. Remove the "Embed" text that often appears at the very end
+            if len(lines) > 0 and "Embed" in lines[-1]:
+                lines = lines[:-1]
 
-        # Scrape lyrics
-        page = requests.get(lyrics_page_url)
-        soup = BeautifulSoup(page.text, "html.parser")
-
-        # All lyrics are inside <div data-lyrics-container="true">
-        lyrics_divs = soup.find_all("div", {"data-lyrics-container": "true"})
-        lyrics = "\n".join([div.get_text(separator="\n") for div in lyrics_divs])
-
-        return lyrics.strip()
+            cleaned_lyrics = "\n".join(lines)
+            return cleaned_lyrics
+        else:
+            print("Song not found on Genius.")
+            return None
 
     except Exception as e:
-        print("Genius Error:", e)
+        print(f"Genius Error: {e}")
         return None
