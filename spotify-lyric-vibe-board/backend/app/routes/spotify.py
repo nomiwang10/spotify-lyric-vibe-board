@@ -3,10 +3,10 @@ import json
 from fastapi import APIRouter, HTTPException
 from spotipy import Spotify
 from spotipy.oauth2 import SpotifyOAuth
-from dotenv import load_dotenv
+
 from app.routes.genius import get_lyrics_from_genius
 
-load_dotenv()
+
 
 router = APIRouter(prefix="/api")
 
@@ -24,8 +24,8 @@ def get_spotify_client():
             client_secret=os.getenv("SPOTIPY_CLIENT_SECRET"),
             redirect_uri=os.getenv("SPOTIPY_REDIRECT_URI"),
             scope="user-read-currently-playing",
-            open_browser=False,
-            cache_path=".spotify_cache"
+            cache_path=os.getenv("SPOTIPY_CACHE_PATH", ".spotify_cache"),
+            open_browser=False
         )
     )
 
@@ -37,8 +37,8 @@ def get_current_song():
             client_secret=os.getenv("SPOTIPY_CLIENT_SECRET"),
             redirect_uri=os.getenv("SPOTIPY_REDIRECT_URI"),
             scope="user-read-currently-playing",
-            open_browser=False,
-            cache_path=".spotify_cache"
+            cache_path=os.getenv("SPOTIPY_CACHE_PATH", ".spotify_cache"),
+            open_browser=False
         )
 
         if not oauth.get_cached_token():

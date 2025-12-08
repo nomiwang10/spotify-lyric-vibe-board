@@ -1,9 +1,7 @@
 import os
 import requests
-from dotenv import load_dotenv
-from bs4 import BeautifulSoup
 
-load_dotenv()
+from bs4 import BeautifulSoup
 
 GENIUS_TOKEN = os.getenv("GENIUS_ACCESS_TOKEN")
 BASE_URL = "https://api.genius.com"

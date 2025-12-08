@@ -6,15 +6,14 @@ from io import BytesIO
 from PIL import Image
 import textwrap
 from typing import List, Optional
+from app.routes.ai_client import get_openai_client
 
-from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException, status
 from openai import OpenAI
 from pydantic import BaseModel, Field, validator
 
-# Load environment variables (same pattern as ai_text.py)
-load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+#client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # This router is registered in app/main.py
 # as: app.include_router(ai_image.router)
@@ -98,6 +97,7 @@ def _generate_image_data_url(prompt: str) -> str:
     Generate large image first, then compress + downscale to a small JPEG.
     """
     try:
+        client = get_openai_client()
         response = client.images.generate(
             model="gpt-image-1",
             prompt=prompt,

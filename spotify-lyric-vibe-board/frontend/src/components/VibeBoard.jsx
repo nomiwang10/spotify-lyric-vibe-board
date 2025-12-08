@@ -1,218 +1,325 @@
-import { useState, useEffect } from "react";
+// frontend/src/components/VibeBoard.jsx
+
+import { useState, useEffect, useRef } from "react"; 
 import {
-  getCurrentTrack,
-  parseGeniusLyrics,
-  getTranslationVibe,
-  getVibeImage,
+    getCurrentTrack,
+    parseGeniusLyrics,
+    getTranslationVibe, 
+    getVibeImage,      
 } from "../api/vibeApi";
 
 export default function VibeBoard() {
-  const [track, setTrack] = useState(null);
-  const [lyrics, setLyrics] = useState([]);
-  const [currentLine, setCurrentLine] = useState(null);
-  const [translation, setTranslation] = useState(null);
-  const [backgroundImage, setBackgroundImage] = useState("");
-  const [targetLanguage, setTargetLanguage] = useState("English");
-  const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState(null);
+    // ... (State and Refs remain the same as previous fix)
+    const [track, setTrack] = useState(null);
+    const [lyrics, setLyrics] = useState([]); 
+    const [translationData, setTranslationData] = useState(null); 
+    const [currentLine, setCurrentLine] = useState(null); 
+    const [backgroundImage, setBackgroundImage] = useState("");
+    const [targetLanguage, setTargetLanguage] = useState("English");
+    const [isConnected, setIsConnected] = useState(false);
+    const [error, setError] = useState(null);
+    const lyricsRef = useRef(lyrics);
+    const scrollRef = useRef(null); // 💡 NEW: Ref for the scrolling container
 
-  // Poll Spotify every second for current track progress
-  useEffect(() => {
-    if (!isConnected) return;
+    // ... (EFFECT 0, FUNCTION 1, EFFECT 1, EFFECT 2, EFFECT 3 remain the same)
+    
+    useEffect(() => {
+        lyricsRef.current = lyrics;
+    }, [lyrics]); 
 
-    const interval = setInterval(async () => {
-      try {
-        const trackData = await getCurrentTrack();
+    function handleConnect() {
+        window.location.href = "http://127.0.0.1:8000/auth/login";
+    }
+
+    // --- EFFECT 1: Poll Spotify (Timing/Sync Logic) ---
+    useEffect(() => {
+        if (!isConnected) return;
+        const interval = setInterval(async () => {
+            try {
+                const trackData = await getCurrentTrack();
+                if (trackData.error) {
+                    setError(trackData.error);
+                    return;
+                }
+                setTrack(trackData);
+                setError(null);
+                const currentTimeMs = trackData.progress_ms; 
+                
+                const currentLyrics = lyricsRef.current;
+                let activeLine = null;
+
+                for (let i = currentLyrics.length - 1; i >= 0; i--) {
+                    const line = currentLyrics[i];
+                    if (line.timestamp_ms <= currentTimeMs) {
+                        activeLine = line;
+                        break;
+                    }
+                }
+
+                if (activeLine && activeLine.id !== currentLine?.id) {
+                    setCurrentLine(activeLine);
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }, 1000);
+        return () => clearInterval(interval); 
+    }, [isConnected, currentLine]); 
+
+    // --- EFFECT 2: Fetch AI Data (Lyrics, Vibe, Image) ---
+    useEffect(() => {
+        const currentLyrics = track?.lyrics;
+        const currentTrackId = track?.track_id; 
+
+        if (!currentLyrics || !currentTrackId) return;
+
+        const processedLyrics = parseGeniusLyrics(currentLyrics);
         
-        if (trackData.error) {
-          setError(trackData.error);
-          return;
+        if (processedLyrics.length > 0) {
+            setLyrics(processedLyrics); 
+            setCurrentLine(null); 
+        } else {
+            setLyrics([]);
+            setTranslationData(null);
+            setCurrentLine(null);
+            setBackgroundImage("");
+            return;
         }
 
-        setTrack(trackData);
-        setError(null);
+        const fetchVibeData = async () => {
+            try {
+                const vibeData = await getTranslationVibe(
+                    processedLyrics, 
+                    targetLanguage
+                );
+                
+                setTranslationData(vibeData); 
 
-        // --- NEW LOGIC START ---
+                const imageData = await getVibeImage(
+                    currentTrackId, 
+                    vibeData.colors,
+                    vibeData.imagePrompt
+                );
+                setBackgroundImage(imageData.imageUrl);
+            } catch (e) {
+                console.error("AI Fetch Error:", e);
+            }
+        };
+
+        fetchVibeData();
         
-        const currentTimeMs = trackData.progress_ms; 
+    }, [track?.lyrics, track?.track_id, targetLanguage]); 
 
-        // 1. MATH MAGIC: Calculate exactly which line index we should be on.
-        // If we are at 12 seconds, 12000 / 5000 = 2.4 -> Index 2.
-        const lyricIndex = Math.floor(currentTimeMs / 5000);
-
-        // 2. SAFETY: Make sure that index actually exists in our lyrics list
-        if (lyrics.length > 0 && lyricIndex < lyrics.length) {
-          const activeLine = lyrics[lyricIndex];
-
-          // 3. UPDATE: Only fetch AI if the line has changed
-          if (activeLine && activeLine.id !== currentLine?.id) {
-            setCurrentLine(activeLine);
-
-            // Get translation + vibe
-            const vibeData = await getTranslationVibe(
-              activeLine.id,
-              activeLine.text,
-              targetLanguage
-            );
-            setTranslation(vibeData);
-
-            // Get background image
-            const imageData = await getVibeImage(
-              vibeData.id,
-              vibeData.colors,
-              vibeData.imagePrompt
-            );
-            setBackgroundImage(imageData.imageUrl);
-          }
+    // --- EFFECT 4: Scroll the active line into view (NEW) ---
+    useEffect(() => {
+        if (currentLine && scrollRef.current) {
+            const activeElement = document.getElementById(`lyric-${currentLine.id}`);
+            if (activeElement) {
+                activeElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center', // Centers the line in the view
+                });
+            }
         }
+    }, [currentLine]);
 
-      } catch (err) {
-        console.error(err);
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [isConnected, lyrics, currentLine, targetLanguage]);
+    // --- HELPER FUNCTION: Find the translated line for display ---
+    const getTranslatedLine = (lineId) => {
+        return translationData?.translatedLines?.[lineId]?.text || '...';
+    }
 
-  // Update lyrics whenever the track changes
-  useEffect(() => {
-    if (!track?.lyrics) return;
-
-    // Use our new helper to chop up the Genius text
-    const processedLyrics = parseGeniusLyrics(track.lyrics);
-    setLyrics(processedLyrics);
-  }, [track?.lyrics]);
-
-  function handleConnect() {
-    // Redirect to Spotify auth (Using 127.0.0.1 to match backend)
-    window.location.href = "http://127.0.0.1:8000/auth/login";
-  }
-
-  // Check if already authenticated on load
-  useEffect(() => {
-    getCurrentTrack()
-      .then((data) => {
-        if (!data.error) {
-          setIsConnected(true);
-          setTrack(data);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        backgroundImage: backgroundImage ? `url(${backgroundImage})` : "none",
-        backgroundColor: "#1a1a2e",
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        transition: "background-image 0.5s ease-in-out",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        color: "white",
-        textShadow: "2px 2px 4px rgba(0,0,0,0.8)",
-        padding: "20px",
-      }}
-    >
-      {/* Language selector */}
-      <div style={{ position: "absolute", top: 20, right: 20 }}>
-        <select
-          value={targetLanguage}
-          onChange={(e) => setTargetLanguage(e.target.value)}
-          style={{ padding: "8px", fontSize: "1rem" }}
+    // --- RETURN JSX (Display Logic) ---
+    return (
+        <div 
+        style={{
+            minHeight: "100vh",
+            backgroundImage: backgroundImage ? `url(${backgroundImage})` : "none",
+            backgroundColor: "#1a1a2e",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            transition: "background-image 0.5s ease-in-out",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "white",
+            textShadow: "2px 2px 4px rgba(0,0,0,0.8)",
+            padding: "20px",
+            // Spotify-like layout wrapper
+            position: 'relative',
+        }}
         >
-          <option value="English">English</option>
-          <option value="Spanish">Spanish</option>
-          <option value="French">French</option>
-          <option value="German">German</option>
-          <option value="Japanese">Japanese</option>
-          <option value="Korean">Korean</option>
-          <option value="Chinese">Chinese</option>
-          <option value="Turkish">Turkish</option>
-          <option value="Hindi">Hindi</option>
-        </select>
-      </div>
+            {/* Header, Language selector, and Vibe/Color Display remain the same, 
+                but we'll adjust the vibe display to be centered below the lyrics. */}
 
-      {/* Header - song info */}
-      <header style={{ position: "absolute", top: 20, left: 20 }}>
-        {track ? (
-          <>
-            {/* --- FIX 2: Use 'track.song' (matches Python backend) --- */}
-            <h2>{track.song}</h2>
-            <p>{track.artist}</p>
-          </>
-        ) : (
-          <h2>No track playing</h2>
-        )}
-      </header>
-
-      {/* Main content */}
-      <main style={{ textAlign: "center", maxWidth: "800px" }}>
-        {!isConnected ? (
-          <button
-            onClick={handleConnect}
-            style={{
-              fontSize: "1.5rem",
-              padding: "15px 30px",
-              cursor: "pointer",
-              background: "#1DB954",
-              color: "white",
-              border: "none",
-              borderRadius: "30px",
-            }}
-          >
-            Connect Spotify
-          </button>
-        ) : error ? (
-          <p style={{ fontSize: "1.5rem" }}>{error}</p>
-        ) : currentLine ? (
-          <>
-            <p style={{ fontSize: "2.5rem", marginBottom: "20px" }}>
-              {currentLine.text}
-            </p>
-            <p style={{ fontSize: "1.5rem", opacity: 0.9 }}>
-              {translation?.translated || "Translating..."}
-            </p>
-
-            {translation && (
-              <div style={{ marginTop: "30px" }}>
-                <span
-                  style={{
-                    background: "rgba(255,255,255,0.2)",
-                    padding: "8px 16px",
-                    borderRadius: "20px",
-                    marginRight: "10px",
-                  }}
+            <header style={{ position: "absolute", top: 20, left: 20 }}>
+                {track ? (
+                    <>
+                        <h2 style={{margin: 0}}>{track.song}</h2>
+                        <p style={{margin: 0, opacity: 0.7}}>{track.artist}</p>
+                    </>
+                ) : (
+                    <h2>No track playing</h2>
+                )}
+            </header>
+            
+            <div style={{ position: "absolute", top: 20, right: 20 }}>
+                <select
+                    value={targetLanguage}
+                    onChange={(e) => setTargetLanguage(e.target.value)} 
+                    style={{ padding: "8px", fontSize: "1rem" }}
                 >
-                  {translation.emotion}
-                </span>
-                {translation.themes?.map((theme) => (
-                  <span
-                    key={theme}
-                    style={{
-                      background: "rgba(255,255,255,0.1)",
-                      padding: "5px 12px",
-                      borderRadius: "15px",
-                      marginRight: "8px",
-                      fontSize: "0.9rem",
-                    }}
-                  >
-                    {theme}
-                  </span>
-                ))}
-              </div>
+                    <option value="English">English</option>
+                    <option value="Spanish">Spanish</option>
+                    <option value="French">French</option>
+                    <option value="German">German</option>
+                    <option value="Japanese">Japanese</option>
+                    <option value="Korean">Korean</option>
+                    <option value="Chinese">Chinese</option>
+                    <option value="Turkish">Turkish</option>
+                    <option value="Hindi">Hindi</option>
+                </select>
+            </div>
+            
+            <main style={{ 
+                display: "flex", 
+                width: "80%", 
+                height: "70vh", 
+                marginTop: "100px",
+                maxWidth: "1200px",
+                background: "rgba(0,0,0,0.2)",
+                borderRadius: "10px",
+                overflow: "hidden", // Hide scrollbars initially
+            }}>
+                
+                {!isConnected ? (
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <button
+                            onClick={handleConnect} 
+                            style={{
+                                fontSize: "1.5rem",
+                                padding: "15px 30px",
+                                cursor: "pointer",
+                                background: "#1DB954",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "30px",
+                            }}
+                        >
+                            Connect Spotify
+                        </button>
+                    </div>
+                ) : error ? (
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <p style={{ fontSize: "1.5rem" }}>{error}</p>
+                    </div>
+                ) : (
+                    <>
+                        <div 
+                            ref={scrollRef} // 💡 Attach ref for auto-scrolling
+                            style={{ 
+                                flex: 1, 
+                                overflowY: 'auto', 
+                                padding: '20px', 
+                                height: '100%',
+                                scrollbarWidth: 'none', // Hide scrollbar in Firefox
+                                msOverflowStyle: 'none', // Hide scrollbar in IE/Edge
+                            }}
+                        >
+                            {/* Original Lyrics Panel */}
+                            <h3 style={{ borderBottom: '1px solid rgba(255,255,255,0.3)', paddingBottom: '10px' }}>Original Lyrics</h3>
+                            {lyrics.length > 0 ? lyrics.map((line) => {
+                                const isHighlighted = currentLine?.id === line.id;
+                                const isEmptyLine = !line.text.trim();
+                                return (
+                                    <p
+                                        key={line.id}
+                                        id={`lyric-${line.id}`} // Used for scrolling
+                                        style={{
+                                            fontSize: "1.8rem",
+                                            marginBottom: "25px",
+                                            fontWeight: isHighlighted ? "bold" : "normal",
+                                            opacity: isHighlighted ? 1 : 0.4,
+                                            transition: 'opacity 0.5s ease, font-weight 0.5s ease',
+                                            minHeight: isEmptyLine ? '0.5rem' : 'auto', // Keep empty lines small
+                                        }}
+                                    >
+                                        {line.text || (isEmptyLine ? '🎶' : '')}
+                                    </p>
+                                );
+                            }) : <p style={{ fontSize: "1.5rem" }}>Play a song on Spotify!</p>}
+                        </div>
+
+                        <div style={{ 
+                            flex: 1, 
+                            overflowY: 'auto', 
+                            padding: '20px', 
+                            height: '100%', 
+                            borderLeft: '1px solid rgba(255,255,255,0.3)',
+                            scrollbarWidth: 'none', 
+                            msOverflowStyle: 'none',
+                        }}>
+                            {/* Translated Lyrics Panel */}
+                            <h3 style={{ borderBottom: '1px solid rgba(255,255,255,0.3)', paddingBottom: '10px' }}>{targetLanguage} Translation</h3>
+                            {lyrics.length > 0 ? lyrics.map((line) => {
+                                const isHighlighted = currentLine?.id === line.id;
+                                const translatedText = getTranslatedLine(line.id);
+                                const isEmptyLine = !line.text.trim();
+                                return (
+                                    <p
+                                        key={`trans-${line.id}`}
+                                        style={{
+                                            fontSize: "1.8rem",
+                                            marginBottom: "25px",
+                                            fontWeight: isHighlighted ? "bold" : "normal",
+                                            opacity: isHighlighted ? 1 : 0.4,
+                                            transition: 'opacity 0.5s ease, font-weight 0.5s ease',
+                                            minHeight: isEmptyLine ? '0.5rem' : 'auto',
+                                            color: translationData ? 'white' : 'rgba(255, 255, 255, 0.6)'
+                                        }}
+                                    >
+                                        {/* Display translation or a loading message */}
+                                        {translationData 
+                                            ? (translatedText !== '...' ? translatedText : (isEmptyLine ? '🎶' : ''))
+                                            : (line.text.trim() ? "Translating..." : (isEmptyLine ? '🎶' : ''))
+                                        }
+                                    </p>
+                                );
+                            }) : <p style={{ fontSize: "1.5rem" }}>Waiting for translation...</p>}
+                        </div>
+                    </>
+                )}
+            </main>
+
+            {/* Display Vibe/Color BELOW the lyrics panels */}
+            {translationData && (
+                <div style={{ marginTop: "30px", textAlign: 'center' }}>
+                    <span
+                        style={{
+                            background: "rgba(255,255,255,0.2)",
+                            padding: "8px 16px",
+                            borderRadius: "20px",
+                            marginRight: "10px",
+                        }}
+                    >
+                        {translationData.emotion}
+                    </span>
+                    {translationData.themes?.map((theme) => (
+                        <span
+                            key={theme}
+                            style={{
+                                background: "rgba(255,255,255,0.1)",
+                                padding: "5px 12px",
+                                borderRadius: "15px",
+                                marginRight: "8px",
+                                fontSize: "0.9rem",
+                            }}
+                        >
+                            {theme}
+                        </span>
+                    ))}
+                </div>
             )}
-          </>
-        ) : (
-          <p style={{ fontSize: "1.5rem" }}>
-            {/* If we are here, lyrics exist but we are between lines */}
-            {lyrics.length > 0 ? "Wait for lyrics..." : "Play a song on Spotify!"}
-          </p>
-        )}
-      </main>
-    </div>
-  );
+        </div>
+    );
 }

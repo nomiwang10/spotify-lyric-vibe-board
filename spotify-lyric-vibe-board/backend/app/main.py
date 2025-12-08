@@ -3,6 +3,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes import ai_text, spotify, ai_image, genius
 from app.routes import auth
+import os 
+from dotenv import load_dotenv
+
+load_dotenv() # Pass the specific path to the function
+
 
 
 app = FastAPI()
