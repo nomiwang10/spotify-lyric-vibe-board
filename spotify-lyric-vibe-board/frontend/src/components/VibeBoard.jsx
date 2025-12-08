@@ -7,6 +7,7 @@ import {
 } from "../api/vibeApi";
 
 export default function VibeBoard() {
+
   const [track, setTrack] = useState(null);
   const [lyrics, setLyrics] = useState([]);
   
@@ -21,6 +22,12 @@ export default function VibeBoard() {
   // Refs to prevent "Closure Stale State" issues in setInterval
   const lyricsRef = useRef([]);
   const analyzedRef = useRef([]);
+  const currentIndexRef = useRef(-1);
+
+  // --- NEW: Sync currentLineIndex to a ref ---
+useEffect(() => {
+  currentIndexRef.current = currentLineIndex;
+}, [currentLineIndex]);
 
   // --- 1. INITIAL CONNECT ---
   useEffect(() => {
@@ -31,7 +38,7 @@ export default function VibeBoard() {
           setTrack(data);
         }
       })
-      .catch((e) => console.log("Not connected yet"));
+      .catch((error) => console.error("Initial connection failed:",error));
   }, []);
 
   // --- 2. SONG CHANGE DETECTOR & LYRIC PARSING ---
@@ -47,6 +54,7 @@ export default function VibeBoard() {
     // We parse mostly to check if we have lyrics
     const parsed = parseGeniusLyrics(newRawLyrics);
 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     if (parsed.length > 0 && parsed[0].text !== currentFirstLine) {
       console.log("🎵 New Song Detected:", track.song);
       setLyrics(parsed);
@@ -70,7 +78,7 @@ export default function VibeBoard() {
           console.error("❌ Analysis Failed:", err);
         });
     }
-  }, [track?.song]);
+  }, [track?.song,lyrics,track?.lyrics]);
 
   // --- 3. THE TIMER LOOP (Only handles Time & Index) ---
   useEffect(() => {
@@ -90,7 +98,7 @@ export default function VibeBoard() {
 
         // 2. Calculate Index
         const newIndex = trackData.is_paused 
-          ? currentLineIndex 
+          ? currentIndexRef.current
           : Math.floor(trackData.progress_ms / 5000);
 
         // 3. Update Index State ONLY if changed
@@ -139,7 +147,7 @@ export default function VibeBoard() {
       })
       .catch((err) => console.error("❌ Image Gen Error:", err));
 
-  }, [currentLineIndex]); 
+  }, [currentLineIndex, lyrics, analyzedData]); 
 
   // --- RENDER HELPERS ---
   

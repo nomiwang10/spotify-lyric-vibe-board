@@ -37,7 +37,7 @@ class GenerateImageResponse(BaseModel):
     image_data_url: str
 
 
-def _build_smart_prompt(payload: GenerateImageRequest) -> str:
+def _build_prompt(payload: GenerateImageRequest) -> str:
     """
     STEP 1: ASK CHATGPT TO DESCRIBE THE IMAGE.
     Instead of just pasting lyrics, we ask GPT-4o-mini to visualize them.
@@ -112,14 +112,14 @@ def _generate_image_data_url(prompt: str) -> str:
         jpeg_b64 = base64.b64encode(jpeg_bytes).decode("utf-8")
         return f"data:image/jpeg;base64,{jpeg_b64}"
     except Exception as e:
-         print(f"[ai-image] Compression Error: {e}")
-         return f"data:image/png;base64,{png_b64}"
+        print(f"[ai-image] Compression Error: {e}")
+        return f"data:image/png;base64,{png_b64}"
 
 
 @router.post("/generate-image", response_model=GenerateImageResponse)
 def generate_image(payload: GenerateImageRequest) -> GenerateImageResponse:
     # 1. Get the smart description from GPT
-    smart_prompt = _build_smart_prompt(payload)
+    smart_prompt = _build_prompt(payload)
     
     # 2. Generate the image from DALL-E
     data_url = _generate_image_data_url(smart_prompt)

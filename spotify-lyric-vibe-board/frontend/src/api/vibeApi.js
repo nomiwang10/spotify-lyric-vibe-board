@@ -5,6 +5,7 @@ export async function getCurrentTrack() {
     const res = await fetch(`${API_BASE}/current-song`);
     return await res.json();
   } catch (err) {
+    console.error("API Fetch Error:",err)
     return { error: "Failed to connect to backend" };
   }
 }
@@ -12,7 +13,7 @@ export async function getCurrentTrack() {
 export function parseGeniusLyrics(rawLyrics) {
     if (!rawLyrics) return [];
 
-  const lines = rawText
+  const lines = rawLyrics
     .split("\n")
     .map(line => line.trim())
     .filter(line => 

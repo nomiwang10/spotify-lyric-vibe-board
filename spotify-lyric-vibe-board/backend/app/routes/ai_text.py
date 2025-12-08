@@ -32,6 +32,7 @@ def analyze_lyrics(request: LyricBatch):
     """
     try:
         # --- HARDCODED ENGLISH FORCE ---
+        client = get_openai_client()
         # We ignore request.targetLanguage and force English
         forced_language = "English"
 
@@ -60,7 +61,11 @@ def analyze_lyrics(request: LyricBatch):
 
         response = client.chat.completions.create(
             model="gpt-4o", 
-            # ... (messages and response_format) ...
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            # 💡 Don't forget to add the response format for structured JSON output
+            response_format={"type": "json_object"}
         )
         
         ai_content = json.loads(response.choices[0].message.content)
