@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   getCurrentTrack,
   parseGeniusLyrics,
@@ -9,107 +9,20 @@ import {
 export default function VibeBoard() {
   const [track, setTrack] = useState(null);
   const [lyrics, setLyrics] = useState([]);
+  
+  // Analyzed Data (Translations)
   const [analyzedData, setAnalyzedData] = useState([]);
+  
+  // Current State
   const [currentLineIndex, setCurrentLineIndex] = useState(-1);
-  
-  // HISTORY STATE: Stores objects now -> { url: "...", vibe: "Sad" }
   const [imageHistory, setImageHistory] = useState([]);
-  
   const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState(null);
 
-  // Get current vibe for the main background color
-  // Fallback to dark color if analysis isn't ready
-  const currentVibeData = analyzedData[currentLineIndex];
-  const backgroundColor = currentVibeData?.color || "#111";
+  // Refs to prevent "Closure Stale State" issues in setInterval
+  const lyricsRef = useRef([]);
+  const analyzedRef = useRef([]);
 
-  // --- 1. SYNC WITH SPOTIFY & GENERATE IMAGES ---
-  useEffect(() => {
-    if (!isConnected) return;
-
-    const interval = setInterval(async () => {
-      try {
-        const trackData = await getCurrentTrack();
-        
-        if (trackData.error) {
-          if (trackData.is_paused) {
-             setTrack(trackData);
-          } else {
-             setError(trackData.error);
-          }
-          return;
-        }
-
-        setTrack(trackData);
-        setError(null);
-
-        const newIndex = trackData.is_paused 
-          ? currentLineIndex 
-          : Math.floor(trackData.progress_ms / 5000);
-
-        // If line has changed...
-        if (lyrics.length > 0 && newIndex < lyrics.length) {
-          if (newIndex !== currentLineIndex) {
-            setCurrentLineIndex(newIndex);
-            
-            // --- ROBUST DATA FETCHING ---
-            const lyricText = lyrics[newIndex].text;
-            
-            // Fallback: If AI hasn't analyzed this line yet, guess "Abstract"
-            // This ensures images ALWAYS generate, even if analysis is slow.
-            const vibeWord = (analyzedData && analyzedData[newIndex]) 
-              ? analyzedData[newIndex].vibe 
-              : "Abstract";
-
-            // Call API with text + vibe
-            getVibeImage(lyricText, vibeWord)
-              .then((img) => {
-                if (img && img.imageUrl) {
-                  // Add Image AND Vibe Word to history
-                  setImageHistory((prev) => [
-                    { url: img.imageUrl, vibe: vibeWord }, 
-                    ...prev
-                  ].slice(0, 8));
-                }
-              })
-              .catch((err) => console.error("Image Gen Error:", err));
-          }
-        }
-      } catch (err) {
-        console.error(err);
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [isConnected, currentLineIndex, analyzedData, lyrics]);
-
-  // --- 2. LOAD LYRICS & ANALYZE ---
-  useEffect(() => {
-    if (!track?.song) return;
-
-    const processedLyrics = parseGeniusLyrics(track.lyrics);
-
-    if (
-      processedLyrics.length > 0 &&
-      (lyrics.length === 0 || lyrics[0].text !== processedLyrics[0].text)
-    ) {
-      setLyrics(processedLyrics);
-      setAnalyzedData([]);
-      setImageHistory([]); 
-      setCurrentLineIndex(-1);
-
-      getTranslationVibe(processedLyrics, "English")
-        .then((results) => {
-          setAnalyzedData(results || []);
-        })
-        .catch((err) => {
-          console.error("AI Batch Error:", err);
-          setAnalyzedData([]);
-        });
-    }
-  }, [track?.song]);
-
-  // --- 3. AUTO CONNECT ---
+  // --- 1. INITIAL CONNECT ---
   useEffect(() => {
     getCurrentTrack()
       .then((data) => {
@@ -118,18 +31,128 @@ export default function VibeBoard() {
           setTrack(data);
         }
       })
-      .catch(() => {});
+      .catch((e) => console.log("Not connected yet"));
   }, []);
+
+  // --- 2. SONG CHANGE DETECTOR & LYRIC PARSING ---
+  useEffect(() => {
+    if (!track?.song) return;
+    if (track.song === "No Track Playing") return;
+
+    // Only re-parse if it's actually a new song text
+    // (Simple check: compare first line text if available)
+    const newRawLyrics = track.lyrics;
+    const currentFirstLine = lyrics.length > 0 ? lyrics[0].text : "";
+    
+    // We parse mostly to check if we have lyrics
+    const parsed = parseGeniusLyrics(newRawLyrics);
+
+    if (parsed.length > 0 && parsed[0].text !== currentFirstLine) {
+      console.log("🎵 New Song Detected:", track.song);
+      setLyrics(parsed);
+      lyricsRef.current = parsed; // Sync Ref
+      
+      setAnalyzedData([]); // Reset analysis
+      analyzedRef.current = []; // Sync Ref
+      
+      setImageHistory([]); 
+      setCurrentLineIndex(-1);
+
+      // Trigger Batch Analysis
+      console.log("🧠 Starting AI Analysis...");
+      getTranslationVibe(parsed, "English")
+        .then((results) => {
+          console.log("✅ Analysis Complete:", results);
+          setAnalyzedData(results || []);
+          analyzedRef.current = results || [];
+        })
+        .catch((err) => {
+          console.error("❌ Analysis Failed:", err);
+        });
+    }
+  }, [track?.song]);
+
+  // --- 3. THE TIMER LOOP (Only handles Time & Index) ---
+  useEffect(() => {
+    if (!isConnected) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const trackData = await getCurrentTrack();
+        
+        if (trackData.error) {
+          // Handle paused or error
+          return;
+        }
+
+        // 1. Update Track info (progress, etc)
+        setTrack(trackData);
+
+        // 2. Calculate Index
+        const newIndex = trackData.is_paused 
+          ? currentLineIndex 
+          : Math.floor(trackData.progress_ms / 5000);
+
+        // 3. Update Index State ONLY if changed
+        if (lyricsRef.current.length > 0 && newIndex < lyricsRef.current.length) {
+          setCurrentLineIndex((prevIndex) => {
+            if (newIndex !== prevIndex) {
+              return newIndex; // This triggers the Effect below
+            }
+            return prevIndex;
+          });
+        }
+      } catch (err) {
+        console.error("Poll Error:", err);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isConnected]); 
+
+  // --- 4. THE IMAGE GENERATOR (Triggered by Index Change) ---
+  useEffect(() => {
+    if (currentLineIndex < 0) return;
+    if (lyrics.length === 0) return;
+
+    const currentLyricObj = lyrics[currentLineIndex];
+    if (!currentLyricObj) return;
+
+    console.log(`🎨 Line Changed to ${currentLineIndex}: "${currentLyricObj.text}"`);
+
+    // Determine Vibe (Fallback to 'Abstract' if analysis isn't ready)
+    const analysis = analyzedData[currentLineIndex];
+    const vibeWord = analysis ? analysis.vibe : "Abstract";
+
+    // GENERATE IMAGE
+    getVibeImage(currentLyricObj.text, vibeWord)
+      .then((img) => {
+        if (img && img.imageUrl) {
+          console.log("🖼️ Image Generated Successfully");
+          setImageHistory((prev) => [
+            { url: img.imageUrl, vibe: vibeWord }, 
+            ...prev
+          ].slice(0, 8));
+        } else {
+            console.warn("⚠️ Backend returned no image URL");
+        }
+      })
+      .catch((err) => console.error("❌ Image Gen Error:", err));
+
+  }, [currentLineIndex]); 
+
+  // --- RENDER HELPERS ---
+  
+  // Safe access to current analysis
+  const currentAnalysis = analyzedData[currentLineIndex];
+  const backgroundColor = currentAnalysis?.color || "#111";
 
   function handleConnect() {
     window.location.href = "http://127.0.0.1:8000/auth/login";
   }
 
-  const currentLyric = lyrics[currentLineIndex];
-
-  // --- NEW COMPONENT: IMAGE BOX WITH TEXT OVERLAY ---
+  // Reuse your ImageBox component
   const ImageBox = ({ data, opacity = 1 }) => {
-    // data is { url: "...", vibe: "Sad" } or undefined
     const imgUrl = data?.url;
     const vibeText = data?.vibe;
 
@@ -138,7 +161,7 @@ export default function VibeBoard() {
         style={{
           width: "100%",
           height: "100%",
-          position: "relative", // Needed for absolute positioning of text
+          position: "relative",
           backgroundImage: imgUrl ? `url(${imgUrl})` : "none",
           backgroundSize: "cover",
           backgroundPosition: "center",
@@ -150,7 +173,6 @@ export default function VibeBoard() {
           overflow: "hidden"
         }}
       >
-        {/* The Vibe Word Overlay */}
         {vibeText && imgUrl && (
           <div style={{
             position: "absolute",
@@ -189,7 +211,6 @@ export default function VibeBoard() {
         fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
       }}
     >
-      {/* Header */}
       <div style={{ position: "absolute", top: 25, left: 25, zIndex: 10 }}>
         {track && track.song !== "No Track Playing" && (
           <div style={{ background: "rgba(0,0,0,0.6)", padding: "10px 20px", borderRadius: "30px", backdropFilter: "blur(5px)" }}>
@@ -199,14 +220,27 @@ export default function VibeBoard() {
         )}
       </div>
 
-      {/* --- GRID (Using the new ImageBox) --- */}
+      {/* --- ADDED IMAGE SECTION --- */}
+      <div style={{ position: "absolute", top: 25, right: 25, zIndex: 10 }}>
+        {/* credits to Gemini nano banana pro for the image */}
+        <img 
+            src="/latentlyrics_icon_gemini.png" 
+            alt="Latent Lyrics Icon" 
+            style={{ 
+                width: "100px", 
+                height: "auto", 
+                borderRadius: "20px", 
+                boxShadow: "0 4px 15px rgba(0,0,0,0.5)" 
+            }} 
+        />
+      </div>
+      {/* --------------------------- */}
+
       <ImageBox data={imageHistory[0]} opacity={1} />   
       <ImageBox data={imageHistory[1]} opacity={0.9} /> 
       <ImageBox data={imageHistory[2]} opacity={0.8} /> 
-      
       <ImageBox data={imageHistory[7]} opacity={0.4} /> 
 
-      {/* --- CENTER STAGE --- */}
       <main
         style={{
           gridColumn: "2 / 3",
@@ -226,35 +260,24 @@ export default function VibeBoard() {
         }}
       >
         {!isConnected ? (
-          <button
-            onClick={handleConnect}
-            style={{
-              padding: "15px 40px",
-              fontSize: "1.2rem",
-              borderRadius: "50px",
-              border: "none",
-              background: "#1DB954",
-              color: "white",
-              fontWeight: "bold",
-              cursor: "pointer",
-            }}
-          >
+          <button onClick={handleConnect} style={{ padding: "15px 40px", fontSize: "1.2rem", borderRadius: "50px", border: "none", background: "#1DB954", color: "white", fontWeight: "bold", cursor: "pointer" }}>
             Connect Spotify
           </button>
-        ) : currentLyric ? (
+        ) : (lyrics[currentLineIndex]) ? (
           <>
             <p style={{ fontSize: "2.2rem", fontWeight: "700", marginBottom: "25px", lineHeight: "1.3", textShadow: "0 2px 10px rgba(0,0,0,0.8)" }}>
-              {currentLyric.text}
+              {lyrics[currentLineIndex].text}
             </p>
 
+            {/* Translation Logic */}
             <p style={{ fontSize: "1.4rem", color: "#FFD700", fontStyle: "italic", marginBottom: "35px", opacity: 0.9 }}>
-              {currentVibeData ? currentVibeData.translated : "..."}
+              {currentAnalysis ? currentAnalysis.translated : "analyzing..."}
             </p>
 
-            {currentVibeData && (
-              <div style={{ display: "flex", gap: "10px" }}>
+            {/* Vibe Logic */}
+            <div style={{ display: "flex", gap: "10px" }}>
                 <span style={{ 
-                    background: currentVibeData.color, 
+                    background: currentAnalysis ? currentAnalysis.color : "#333", 
                     padding: "8px 20px", 
                     borderRadius: "20px", 
                     fontWeight: "bold", 
@@ -262,20 +285,18 @@ export default function VibeBoard() {
                     textShadow: "1px 1px 2px rgba(0,0,0,0.5)",
                     boxShadow: "0 4px 10px rgba(0,0,0,0.3)"
                   }}>
-                  {currentVibeData.vibe}
+                  {currentAnalysis ? currentAnalysis.vibe : "..."}
                 </span>
-              </div>
-            )}
+            </div>
           </>
         ) : (
           <p style={{ fontSize: "1.5rem", opacity: 0.7 }}>
-            {track?.is_paused ? "Music Paused" : "Listening..."}
+            {track?.is_paused ? "Music Paused" : "Waiting for lyrics..."}
           </p>
         )}
       </main>
 
       <ImageBox data={imageHistory[3]} opacity={0.7} /> 
-      
       <ImageBox data={imageHistory[6]} opacity={0.5} /> 
       <ImageBox data={imageHistory[5]} opacity={0.6} /> 
       <ImageBox data={imageHistory[4]} opacity={0.7} /> 
